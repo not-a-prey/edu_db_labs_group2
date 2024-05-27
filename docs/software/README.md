@@ -159,5 +159,162 @@ SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;
 ```
 
-- RESTfull сервіс для управління даними
+## RESTfull сервіс для управління даними
 
+- Запуск сервісу
+
+```
+import user_controller
+from user_controller import app
+
+if __name__ == "__main__":
+    app.run(debug=True, port=3306, host="127.0.0.1")
+```
+
+- Модель 
+
+```
+import mysql.connector
+
+class Users:
+    def __init__(self):
+        try:
+            print("Initializing connection to database...")
+            self.host = 'localhost'
+            self.user = 'root'
+            self.password = 'my-l1ttle-horse'
+            self.db = 'mydb'
+
+            self.linking = mysql.connector.connect(
+                host=self.host,
+                user=self.user,
+                password=self.password,
+                database=self.db
+            )
+
+            self.cur = self.linking.cursor()
+            print("Successful connection to database")
+        except mysql.connector.Error as err:
+            print("Failed to connect to database:", err)
+
+    def get_all_users(self):
+        try:
+            print("Fetching all users...")
+            self.cur.execute("SELECT * FROM user")
+            users = self.cur.fetchall()
+
+            if not users:
+                return {"message": "Немає користувачів", "error": "Not Found", "status_code": 404}
+
+            return users
+        except mysql.connector.Error as err:
+            return {'message': 'Не вдалося отримати всіх користувачів', 'error': str(err), 'status_code': 500}
+
+    def get_user_by_id(self, user_id):
+        try:
+            print(f"Fetching user by id: {user_id}...")
+            user_id = int(user_id)
+            self.cur.execute("SELECT * FROM user WHERE id = %s", (user_id,))
+            user = self.cur.fetchone()
+
+            if not user:
+                return {"message": f"Користувача з таким id = {user_id} не знайдено.", "error": "Not Found", "status_code": 404}
+
+            return user
+        except mysql.connector.Error as err:
+            return {'message': 'Не вдалося знайти користувача', 'error': str(err), 'status_code': 500}
+        except ValueError:
+            return {"message": "Некоректний id користувача", "error": "Bad Request", "status_code": 400}
+
+    def add_user(self, info):
+        try:
+            print(f"Adding user: {info}...")
+            self.cur.execute("START TRANSACTION")
+            self.cur.execute(
+                "INSERT INTO user (id, email, password, role_id) VALUES (%s, %s, %s, %s)",
+                (info['id'], info['email'], info['password'], info['role_id'])
+            )
+            self.linking.commit()
+
+            if self.cur.rowcount > 0:
+                return {"message": "Користувач доданий до бази даних", "status_code": 200}
+            else:
+                return {"message": "Користувач не був доданий до бази даних", "error": "Not Acceptable", "status_code": 406}
+        except mysql.connector.Error as err:
+            self.linking.rollback()
+            return {'message': 'Не вдалося додати користувача', 'error': str(err), 'status_code': 500}
+
+    def update_user(self, user_id, info):
+        try:
+            print(f"Updating user with id: {user_id}, info: {info}...")
+            user_id = int(user_id)
+            self.cur.execute("START TRANSACTION")
+            updated_rows = 0
+            for key, value in info.items():
+                self.cur.execute(f"UPDATE user SET {key} = %s WHERE id = %s", (value, user_id))
+                updated_rows += self.cur.rowcount
+            self.linking.commit()
+
+            if updated_rows > 0:
+                return {"message": f"Дані про користувача із id = {user_id} оновлені", "status_code": 200}
+            else:
+                return {"message": f"Дані користувача із id = {user_id} не були оновлені", "error": "Not Acceptable", "status_code": 406}
+        except mysql.connector.Error as err:
+            self.linking.rollback()
+            return {'message': 'Не вдалося оновити дані користувача', 'error': str(err), 'status_code': 500}
+        except ValueError:
+            return {"message": "Некоректний id користувача", "error": "Bad Request", "status_code": 400}
+
+    def delete_user(self, user_id):
+        try:
+            print(f"Deleting user with id: {user_id}...")
+            user_id = int(user_id)
+            self.cur.execute("START TRANSACTION")
+            self.cur.execute("DELETE FROM user WHERE id = %s", (user_id,))
+            rows_deleted = self.cursor.rowcount
+            self.cur.execute("DELETE FROM action WHERE user_id = %s", (user_id,))
+            rows_deleted += self.cur.rowcount
+            self.linking.commit()
+            if rows_deleted > 0:
+                return {"message": f"Користувач із id = {user_id} видалений із бази даних", "status_code": 204}
+            else:
+                return {"message": f"Користувач із id = {user_id} не був видалений", "error": "Not Found", "status_code": 404}
+        except mysql.connector.Error as err:
+            self.linking.rollback()
+            return {'message': 'Не вдалося видалити користувача', 'error': str(err), 'status_code': 500}
+        except ValueError:
+            return {"message": "Некоректний id користувача", "error": "Bad Request", "status_code": 400}
+```
+
+- Маршрути та контроллер користувачів
+
+```
+from flask import Flask, jsonify, request
+import importlib
+
+app = Flask(__name__)
+user_mod = importlib.import_module("user_module")
+users = user_mod.Users()
+
+@app.route("/users", methods=["GET"])
+def get_all_users():
+    return jsonify(users.get_all_users())
+
+@app.route("/user/<user_id>", methods=["GET"])
+def get_user_by_id(user_id):
+    return jsonify(users.get_user_by_id(user_id))
+
+@app.route("/users/add", methods=["POST"])
+def add_user():
+    params = request.json
+    return jsonify(users.add_user(params))
+
+@app.route("/users/update/<user_id>", methods=["PUT"])
+def update_user(user_id):
+    params = request.json
+    return jsonify(users.update_user(user_id, params))
+
+@app.route("/user/delete/<user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    return jsonify(users.delete_user(user_id))
+```
