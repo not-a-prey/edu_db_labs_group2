@@ -163,7 +163,7 @@ SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;
 
 - Запуск сервісу
 
-```
+```py
 import user_controller
 from user_controller import app
 
@@ -173,7 +173,7 @@ if __name__ == "__main__":
 
 - Модель 
 
-```
+```py
 import mysql.connector
 
 class Users:
@@ -288,7 +288,7 @@ class Users:
 
 - Маршрути та контроллер користувачів
 
-```
+```py
 from flask import Flask, jsonify, request
 import importlib
 
